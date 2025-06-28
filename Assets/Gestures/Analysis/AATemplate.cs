@@ -8,15 +8,17 @@ namespace Gestures.Analysis
     public class AATemplate
     {
         public string Name { get; }
+        public bool IsPartOfWhole { get; }
         private float _commonAngle;
         private float _commonLength;
         private List<float> _angles;
         private List<float> _lengths;
         private Vector2 _startOrientation;
             
-        public AATemplate(string name, List<Vector2> points, float tolerance)
+        public AATemplate(string name, List<Vector2> points, float tolerance, bool isPartOfWhole)
         {
             Name = name;
+            IsPartOfWhole = isPartOfWhole;
             points.Normalize();
             MakeAnalysis(points, tolerance);
         }
@@ -65,7 +67,10 @@ namespace Gestures.Analysis
                 }
 
                 percent += fragmentLength;
-                angle += _angles[i]; // out of range possible only when pathPercent greater than one;
+                if (i < _angles.Count)
+                {
+                    angle += _angles[i];
+                }
             }
             return 0;
         }
@@ -74,7 +79,7 @@ namespace Gestures.Analysis
         public float CompareTo(AATemplate other)
         {
             float commonLengthComparison = Mathf.Min(other._commonLength, _commonLength) / Mathf.Max(other._commonLength, _commonLength);
-            float commonAngleComparison = Mathf.Max(1 - Mathf.Abs(other._commonAngle - _commonAngle) / 360f, 0);
+            float commonAngleComparison = Mathf.Max(1 - Mathf.Abs(other._commonAngle - _commonAngle) / 180f, 0);
 
             float pathComparison = 1;
             float step = 1f / PathComparisonSamplesCount;
@@ -83,10 +88,10 @@ namespace Gestures.Analysis
                 float myDir = GetDirectionByPathPercent(step * i);
                 float otherDir = other.GetDirectionByPathPercent(step * i);
 
-                pathComparison *= 0.5f + Mathf.Max(1 - Mathf.Abs(otherDir - myDir) / 360f, 0) * 0.5f;
+                pathComparison *= 0.4f + Mathf.Max(1 - Mathf.Abs(otherDir - myDir) / 180f, 0) * 0.6f;
             }
 
-            float orientationComparison = Vector2.Dot(_startOrientation, other._startOrientation);
+            float orientationComparison = Mathf.Pow(Mathf.Max(0, Vector2.Dot(_startOrientation, other._startOrientation)), 2);
                 
             return commonLengthComparison * commonAngleComparison * pathComparison * orientationComparison;
         }

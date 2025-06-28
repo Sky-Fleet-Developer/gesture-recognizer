@@ -12,7 +12,18 @@ namespace Gestures.View
         [SerializeField] private GameObject input;
         [SerializeField] private ComputeShader drawShader;
         [SerializeField] private RenderTexture outputTexture;
-        private RenderTexture _doubleBufferTexture;
+        [SerializeField] private Color brushColor;
+
+        public Color BrushColor
+        {
+            get => brushColor;
+            set
+            {
+                brushColor = value;
+                RefreshBrushColor();
+            }
+        }
+        
         private IVectorArrayProcessor _input;
         private int _drawKernelIndex;
         private int _clearKernelIndex;
@@ -21,6 +32,8 @@ namespace Gestures.View
         private int3 _clearKernelThreadGroups;
         private int3 _bakeKernelThreadGroups;
         private bool _initialized;
+        private bool _bakeState;
+        private bool _needBake;
 
         private static readonly int main_tex = Shader.PropertyToID("main_tex");
         private static readonly int double_tex = Shader.PropertyToID("double_tex");
@@ -29,15 +42,22 @@ namespace Gestures.View
         private static readonly int start_draw = Shader.PropertyToID("start_draw");
         private static readonly int end_draw = Shader.PropertyToID("end_draw");
         private static readonly int brush_radius = Shader.PropertyToID("brush_radius");
+        private static readonly int brush_color = Shader.PropertyToID("brush_color");
+
+        public void SetBrushState(bool value)
+        {
+            if (!_bakeState && value)
+            {
+                _needBake = true;
+            }
+            _bakeState = value;
+        }
         
         private void Awake()
         {
             _input = input.GetComponent<IVectorArrayProcessor>();
             _input.OnInputComplete += Clear;
-            _input.OnPointPlaced += Bake;
-            _input.OnPointMoved += UpdatePoint;
-            _doubleBufferTexture = new RenderTexture(outputTexture);
-            _doubleBufferTexture.Create();
+            _input.OnPointPlaced += UpdatePoint;
             _initialized = true;
             PrepareShader();
         }
@@ -46,9 +66,7 @@ namespace Gestures.View
         {
             _initialized = false;
             _input.OnInputComplete -= Clear;
-            _input.OnPointPlaced -= Bake;
-            _input.OnPointMoved -= UpdatePoint;
-            _doubleBufferTexture.Release();
+            _input.OnPointPlaced -= UpdatePoint;
         }
 
         private void OnValidate()
@@ -67,16 +85,13 @@ namespace Gestures.View
             Vector2 rectSize = (transform as RectTransform).rect.size;
             drawShader.SetVector(canvas_size, new Vector4(rectSize.x, rectSize.y, 0, 0));
             drawShader.SetFloat(brush_radius, brushRadius);
+            RefreshBrushColor();
             _drawKernelIndex = drawShader.FindKernel("Draw");
             _bakeKernelIndex = drawShader.FindKernel("Bake");
             _clearKernelIndex = drawShader.FindKernel("Clear");
             drawShader.SetTexture(_drawKernelIndex, main_tex, outputTexture);
             drawShader.SetTexture(_bakeKernelIndex, main_tex, outputTexture);
             drawShader.SetTexture(_clearKernelIndex, main_tex, outputTexture);
-            drawShader.SetTexture(_drawKernelIndex, double_tex, _doubleBufferTexture);
-            drawShader.SetTexture(_bakeKernelIndex, double_tex, _doubleBufferTexture);
-            drawShader.SetTexture(_clearKernelIndex, double_tex, _doubleBufferTexture);
-            
 
             uint3 threadGroupSize = new uint3();
             drawShader.GetKernelThreadGroupSizes(_drawKernelIndex, out threadGroupSize.x, out threadGroupSize.y, out threadGroupSize.z);
@@ -87,14 +102,15 @@ namespace Gestures.View
             _bakeKernelThreadGroups = (int3)math.ceil(new float3(outputTexture.width, outputTexture.height, 1) / (float3)threadGroupSize);
         }
 
-        private void Bake()
+        private void RefreshBrushColor()
         {
-            Draw(true);
+            drawShader.SetVector(brush_color, brushColor);
         }
-        
+
         private void UpdatePoint()
         {
-            Draw(false);
+            Draw(_needBake);
+            _needBake = false;
         }
         
         private void Draw(bool bake)

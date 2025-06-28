@@ -3,12 +3,12 @@
 #pragma kernel Clear
 
 RWTexture2D<float4> main_tex;
-RWTexture2D<float4> double_tex;
 Buffer<float3> path;
 float4 threads_count;
 float4 canvas_size;
 float4 start_draw;
 float4 end_draw;
+float4 brush_color;
 float brush_radius;
 
 float get_length(float2 value)
@@ -50,41 +50,34 @@ float smooth(float value, float power)
     return result / (result + pow((1 - value), power));
 }
 
-[numthreads(8,8,1)]
-void Draw (uint3 id : SV_DispatchThreadID)
+void draw(uint3 id, bool bake)
 {
     float2 pixel_position = ((float2)id.xy) / threads_count.xy * canvas_size.xy;
     float d = get_distance_to_line(start_draw, end_draw, pixel_position);
-    if (d > brush_radius)
+    if (!bake && d > brush_radius)
     {
-        main_tex[id.xy] = double_tex[id.xy];
         return;
     }
     float brush = smooth(max((1.0f - d / brush_radius), 0), 1.5f);
-    float source = double_tex[id.xy];
-    float4 result = max(source, float4(1, 0, 0, brush));
+    float source = main_tex[id.xy].a;
+    float4 result = float4(brush_color.xyz, max(source, brush_color.a * brush));
     main_tex[id.xy] = result;
+}
+
+[numthreads(8,8,1)]
+void Draw (uint3 id : SV_DispatchThreadID)
+{
+    draw(id, false);
 }
 
 [numthreads(8,8,1)]
 void Bake (uint3 id : SV_DispatchThreadID)
 {
-    float2 pixel_position = ((float2)id.xy) / threads_count.xy * canvas_size.xy;
-    float d = get_distance_to_line(start_draw, end_draw, pixel_position);
-    if (d > brush_radius)
-    {
-        return;
-    }
-    float brush = smooth(max((1.0f - d / brush_radius), 0), 1.5f);
-    float v = double_tex[id.xy].a;
-    float result = max(v, brush);
-    main_tex[id.xy] = float4(1, 1, 1, result);
-    double_tex[id.xy] = float4(1, 1, 1, result);
+    draw(id, true);
 }
 
 [numthreads(8,8,1)]
 void Clear (uint3 id : SV_DispatchThreadID)
 {
     main_tex[id.xy] = float4(0, 0, 0, 0);
-    double_tex[id.xy] = float4(0, 0, 0, 0);
 }
